@@ -53,7 +53,13 @@ export const ColorPicker = connect(
               ],
             },
           ]}
-          onChange={(color) => onChange(color.toHexString())}
+          onChange={(color) => {
+            if (!color || (color as any).cleared) {
+              onChange?.(undefined);
+              return;
+            }
+            onChange?.(color.toHexString());
+          }}
         />
       </div>
     );

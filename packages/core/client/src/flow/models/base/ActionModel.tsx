@@ -51,6 +51,68 @@ export const ActionSceneEnum = {
   both: ['collection', 'record'] as ActionSceneType,
 };
 
+const LEGACY_TYPE_TO_VARIANT: Record<string, ButtonProps['variant']> = {
+  default: 'outlined',
+  primary: 'solid',
+  dashed: 'dashed',
+  link: 'link',
+  text: 'text',
+};
+
+const isHexColor = (value?: string) => {
+  if (!value) {
+    return false;
+  }
+  return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
+};
+
+const getReadableTextColor = (hex: string) => {
+  const normalized = hex.replace('#', '');
+  const rgb =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((chunk) => chunk + chunk)
+          .join('')
+      : normalized.slice(0, 6);
+  const r = parseInt(rgb.slice(0, 2), 16);
+  const g = parseInt(rgb.slice(2, 4), 16);
+  const b = parseInt(rgb.slice(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+    return '#fff';
+  }
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance > 186 ? 'rgba(0, 0, 0, 0.88)' : '#fff';
+};
+
+const getCustomButtonStyle = (color: string, variant?: ButtonProps['variant']): React.CSSProperties => {
+  switch (variant) {
+    case 'solid':
+    case 'filled':
+      return {
+        backgroundColor: color,
+        borderColor: color,
+        color: getReadableTextColor(color),
+      };
+    case 'outlined':
+    case 'dashed':
+      return {
+        color,
+        borderColor: color,
+      };
+    case 'link':
+    case 'text':
+      return {
+        color,
+      };
+    default:
+      return {
+        color,
+        borderColor: color,
+      };
+  }
+};
+
 export class ActionModel<T extends DefaultStructure = DefaultStructure> extends FlowModel<T> {
   declare props: ButtonProps & { tooltip?: string };
   declare scene: ActionSceneType;
@@ -65,7 +127,7 @@ export class ActionModel<T extends DefaultStructure = DefaultStructure> extends 
   enableEditIcon = true;
   enableEditType = true;
   enableEditDanger = true;
-  enableEditColor = false;
+  enableEditColor = true;
 
   static _getScene() {
     return _.castArray(this['scene'] || []);
@@ -135,12 +197,28 @@ export class ActionModel<T extends DefaultStructure = DefaultStructure> extends 
     return this.props.icon;
   }
 
-  renderButton() {
+  getButtonRenderProps() {
     const props = this.props;
-    const icon = this.getIcon() ? <Icon type={this.getIcon() as any} /> : undefined;
+    const resolvedVariant =
+      props.color && !props.variant ? LEGACY_TYPE_TO_VARIANT[props.type || 'default'] : props.variant;
+    const customStyle =
+      typeof props.color === 'string' && isHexColor(props.color)
+        ? getCustomButtonStyle(props.color, resolvedVariant)
+        : null;
+    const mergedStyle = customStyle ? { ...props.style, ...customStyle } : props.style;
+    return {
+      props,
+      variant: resolvedVariant,
+      style: mergedStyle,
+      icon: this.getIcon() ? <Icon type={this.getIcon() as any} /> : undefined,
+    };
+  }
+
+  renderButton() {
+    const { props, icon, variant, style } = this.getButtonRenderProps();
 
     return (
-      <Button {...props} onClick={this.onClick.bind(this)} icon={icon}>
+      <Button {...props} variant={variant} style={style} onClick={this.onClick.bind(this)} icon={icon}>
         {props.children || this.getTitle()}
       </Button>
     );
@@ -156,12 +234,12 @@ export class ActionModel<T extends DefaultStructure = DefaultStructure> extends 
 
   // 设置态隐藏时的占位渲染（与真实按钮外观一致，去除 onClick 并降低透明度）
   renderHiddenInConfig(): React.ReactNode | undefined {
-    const props = this.props;
-    const icon = this.getIcon() ? <Icon type={this.getIcon() as any} /> : undefined;
+    const { props, icon, variant, style } = this.getButtonRenderProps();
+    const hiddenStyle = { ...(style || {}), opacity: '0.3' };
     if (this.forbidden) {
       return (
         <ActionWithoutPermission>
-          <Button {...props} onClick={this.onClick.bind(this)} icon={icon} style={{ opacity: '0.3' }}>
+          <Button {...props} variant={variant} onClick={this.onClick.bind(this)} icon={icon} style={hiddenStyle}>
             {props.children || this.getTitle()}
           </Button>
         </ActionWithoutPermission>
@@ -169,7 +247,7 @@ export class ActionModel<T extends DefaultStructure = DefaultStructure> extends 
     }
     return (
       <Tooltip title={this.context.t('The button is hidden and only visible when the UI Editor is active')}>
-        <Button {...props} onClick={this.onClick.bind(this)} icon={icon} style={{ opacity: '0.3' }}>
+        <Button {...props} variant={variant} onClick={this.onClick.bind(this)} icon={icon} style={hiddenStyle}>
           {props.children || this.getTitle()}
         </Button>
       </Tooltip>
@@ -221,18 +299,18 @@ ActionModel.registerFlow({
                 ],
               }
             : undefined,
+          color: ctx.model.enableEditColor
+            ? {
+                'x-decorator': 'FormItem',
+                'x-component': ColorPicker,
+                title: tExpr('Button color'),
+              }
+            : undefined,
           danger: ctx.model.enableEditDanger
             ? {
                 'x-decorator': 'FormItem',
                 'x-component': 'Switch',
                 title: tExpr('Danger action'),
-              }
-            : undefined,
-          color: ctx.model.enableEditColor
-            ? {
-                'x-decorator': 'FormItem',
-                'x-component': ColorPicker,
-                title: tExpr('Color'),
               }
             : undefined,
         };
